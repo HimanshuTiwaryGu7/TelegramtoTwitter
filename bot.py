@@ -5,6 +5,9 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import tweepy
 import requests
 from io import BytesIO
+from aiohttp import web
+import asyncio
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -50,8 +53,12 @@ def start(update, context):
 def handle_text(update, context):
     """Handle text messages"""
     try:
-        response = client.create_tweet(text=update.channel_post.text)
-        logging.info("Text posted to Twitter successfully")
+        # Check if message contains 🚨 symbol
+        if '🚨' in update.channel_post.text:
+            response = client.create_tweet(text=update.channel_post.text)
+            logging.info("Text posted to Twitter successfully")
+        else:
+            logging.info("Message skipped - no 🚨 symbol found")
     except Exception as e:
         logging.error(f"Error posting text to Twitter: {str(e)}")
         if "403" in str(e):
@@ -129,6 +136,28 @@ def handle_channel_post(update, context):
     except Exception as e:
         logging.error(f"Error processing message: {str(e)}")
 
+# Add web server function
+async def web_server():
+    app = web.Application()
+    
+    async def health_check(request):
+        return web.Response(text="Bot is running!", status=200)
+    
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get('PORT', 8000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Web server started on port {port}")
+    return runner
+
+def run_bot(updater):
+    updater.start_polling()
+    updater.idle()
+
 def main():
     """Start the bot"""
     # Create updater and pass in bot token
@@ -143,11 +172,14 @@ def main():
     # Add handler for channel posts
     dp.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
 
-    # Start the bot
-    updater.start_polling()
-    
-    # Run the bot until you press Ctrl-C
-    updater.idle()
+    # Start the bot in a separate thread
+    bot_thread = threading.Thread(target=run_bot, args=(updater,))
+    bot_thread.start()
+
+    # Run web server in the main thread
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(web_server())
+    loop.run_forever()
 
 if __name__ == '__main__':
     main()
