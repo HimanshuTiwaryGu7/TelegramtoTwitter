@@ -7,7 +7,6 @@ import requests
 from io import BytesIO
 from aiohttp import web
 import asyncio
-import threading
 
 # Load environment variables
 load_dotenv()
@@ -136,7 +135,6 @@ def handle_channel_post(update, context):
     except Exception as e:
         logging.error(f"Error processing message: {str(e)}")
 
-# Add web server function
 async def web_server():
     app = web.Application()
     
@@ -154,32 +152,24 @@ async def web_server():
     print(f"Web server started on port {port}")
     return runner
 
-def run_bot(updater):
-    updater.start_polling()
-    updater.idle()
-
-def main():
+async def run_bot():
     """Start the bot"""
-    # Create updater and pass in bot token
     updater = Updater(os.getenv('TELEGRAM_BOT_TOKEN'), use_context=True)
-
-    # Get the dispatcher to register handlers
     dp = updater.dispatcher
-
-    # Add command handlers
     dp.add_handler(CommandHandler("start", start))
-
-    # Add handler for channel posts
     dp.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
+    updater.start_polling()
+    print("Bot started!")
+    await asyncio.sleep(float('inf'))
 
-    # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot, args=(updater,))
-    bot_thread.start()
-
-    # Run web server in the main thread
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(web_server())
-    loop.run_forever()
+async def main():
+    try:
+        # Start web server first
+        runner = await web_server()
+        # Start bot
+        await run_bot()
+    except KeyboardInterrupt:
+        print("Bot stopped!")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
